@@ -12,15 +12,14 @@ public class PlayerController : MonoBehaviour
     public float gravity = 9.81f;
 
     public BoxCollider2D boxCollider2D;
-    Vector2 newPosition;
     public LayerMask groundLayer;
 
-    public GameObject player; 
+    public Rigidbody2D rb; 
     
     // Start is called before the first frame update
     void Start()
     {
-        player = GetComponent<GameObject>();
+        rb = GetComponent<Rigidbody2D>();
         boxCollider2D = GetComponent<BoxCollider2D>();
     }
 
@@ -50,7 +49,7 @@ public class PlayerController : MonoBehaviour
         {
             if (isGrounded()) //when on the ground
             {
-                player.transform.position = Vector2(moveSpeed * Time.deltaTime);
+                rb.velocity = new Vector2(moveSpeed * Time.deltaTime, rb.velocity.y);
             }
             else if (isGrounded() == false) //while in the air
             {
