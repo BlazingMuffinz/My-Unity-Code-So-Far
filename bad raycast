@@ -1,0 +1,16 @@
+private void FixedUpdate()
+    {
+        float rayLength = 1.6f;
+        RaycastHit2D hit = Physics2D.Raycast(boxCollider2D.bounds.center, Vector2.down, rayLength, groundLayer);
+        Color rayColor;
+        if (hit.collider != null)
+        {
+            rayColor = Color.green;
+            float distance = Mathf.Abs(hit.point.y - transform.position.y);
+        }
+        else
+        {
+            rayColor = Color.red;
+        }
+        Debug.DrawRay(boxCollider2D.bounds.center, Vector2.down * rayLength);
+    }
