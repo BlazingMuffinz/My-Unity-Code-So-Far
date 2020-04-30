@@ -2,44 +2,48 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum playerState
+{
+    idle,
+    walk,
+    jump,
+    shoot,
+    interact,
+}
+
+
 public class PlayerController : MonoBehaviour
 {
-    public float moveSpeed;
-    public float jumpVelocity;
-    public float lowJumpMult;
-    public float fallMult;
-    public float airResist;
+    private float moveSpeed = 350;
+    private float jumpVelocity = 19;
+    private float airResist = .9f;
     public float jumpTimer;
     private float jumpTimeCounter;
     public BoxCollider2D boxCollider2D;
     public LayerMask groundLayer;
     public Rigidbody2D rb;
- 
-    private bool onSlope;
+    public playerState thisPlayerState;
     private bool isJumping;
     private bool facingRight;
+    public Vector2 norm;
     // Start is called before the first frame update
     void Start()
     {
         rb = GetComponent<Rigidbody2D>();
-        onSlope = false;
         facingRight = true;
-    }
-
-    private void OnCollisionEnter2D(Collision2D collision)
-    {
-        if (collision.gameObject.tag == ("Slope"))
-        {
-            onSlope = true;
-        }
-       
     }
 
     public bool isGrounded()
     {
+        
         float extraHeightText = .1f;
         RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider2D.bounds.center, boxCollider2D.bounds.size, 0f, Vector2.down, extraHeightText, groundLayer);
-        Color rayColor;
+        if (raycastHit.collider != null)
+        {
+            norm = raycastHit.normal;
+            Debug.DrawRay(raycastHit.point, raycastHit.normal, Color.black);
+        }
+        /*Color rayColor;
         if (raycastHit.collider != null)
         {
             rayColor = Color.green;
@@ -48,15 +52,32 @@ public class PlayerController : MonoBehaviour
         {
             rayColor = Color.red;
         }
+        
         Debug.DrawRay(boxCollider2D.bounds.center + new Vector3(boxCollider2D.bounds.extents.x, 0), Vector2.down * (boxCollider2D.bounds.extents.y + extraHeightText), rayColor);
         Debug.DrawRay(boxCollider2D.bounds.center - new Vector3(boxCollider2D.bounds.extents.x, 0), Vector2.down * (boxCollider2D.bounds.extents.y + extraHeightText), rayColor);
-        Debug.DrawRay(boxCollider2D.bounds.center - new Vector3(boxCollider2D.bounds.extents.x, boxCollider2D.bounds.extents.y + extraHeightText), Vector2.right * (boxCollider2D.bounds.extents.x), rayColor);
+        Debug.DrawRay(boxCollider2D.bounds.center - new Vector3(boxCollider2D.bounds.extents.x, boxCollider2D.bounds.extents.y + extraHeightText), Vector2.right * (boxCollider2D.bounds.extents.x), rayColor);*/
         return raycastHit.collider != null;
+    }
+
+    private void FixedUpdate()
+    {
+        if  (!isGrounded())
+        {
+            rb.AddForce(Vector2.down * 45f);
+        }
+        else if (isGrounded())
+        {
+            rb.AddForce(norm * -45f);
+        }
+
+ 
+       
     }
 
     // Update is called once per frame
     void Update()
     {
+
         if (!facingRight)
         {
             transform.localRotation = Quaternion.Euler(0, 180, 0);
@@ -72,85 +93,89 @@ public class PlayerController : MonoBehaviour
             if (isGrounded()) //when on the ground
             {
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime, rb.velocity.y);
-                rb.constraints = RigidbodyConstraints2D.FreezeRotation;
                 facingRight = true;
             }
             else if (isGrounded() == false) //while in the air
             {
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime * airResist, rb.velocity.y);
-                rb.constraints = RigidbodyConstraints2D.FreezeRotation;
                 facingRight = true;
             }
-  
+            ChangeState(playerState.walk);
         }
         else if (Input.GetKey(KeyCode.LeftArrow)) //moving left
         {
             if (isGrounded()) //when grounded
             {
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime * -1, rb.velocity.y);
-                rb.constraints = RigidbodyConstraints2D.FreezeRotation;
                 facingRight = false;
 
             }
             else if (isGrounded() == false) //while in the air
             {
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime * airResist * -1, rb.velocity.y);
-                rb.constraints = RigidbodyConstraints2D.FreezeRotation;
                 facingRight = false;
             }
-
+            ChangeState(playerState.walk);
         }
         else
         {            
             rb.velocity = new Vector2(0 * Time.deltaTime, rb.velocity.y);
-            rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+            ChangeState(playerState.idle);
         }
 
-        if (onSlope && isGrounded() && !Input.GetKey(KeyCode.RightArrow) & !Input.GetKey(KeyCode.LeftArrow) && !Input.GetButton("Jump")) //if on a slope, on the ground, not moving , and not jumping
+        if (isGrounded() && !Input.GetButton("Jump"))
         {
-            rb.constraints = RigidbodyConstraints2D.FreezeRotation | RigidbodyConstraints2D.FreezePositionX | RigidbodyConstraints2D.FreezePositionY;
+            isJumping = false;
         }
 
-        if (Input.GetButtonDown("Jump") && isGrounded() && !isJumping) //jumping
+        if (Input.GetButtonDown("Jump") && isGrounded() && isJumping == false) //jumping if button is pressed down
         {
-            rb.velocity =  new Vector2(rb.velocity.x, jumpVelocity);
+            rb.velocity = new Vector2(rb.velocity.x, jumpVelocity);
             jumpTimeCounter = jumpTimer;
             isJumping = true;
         }
 
-        if (jumpTimeCounter > 0 && Input.GetButton("Jump") && isJumping == true)
+        if (Input.GetButton("Jump") && !isGrounded() && isJumping == true)
         {
-            jumpTimeCounter -= Time.deltaTime;
-        }
-        else if (jumpTimeCounter > 0 && !Input.GetButton("Jump") && isJumping == true)
-        {
-            rb.velocity += Vector2.up * Physics2D.gravity.y * (fallMult - 1) * Time.deltaTime;
-        }
-        else
-        {
-            rb.velocity += Vector2.up * Physics2D.gravity.y * (fallMult - 1) * Time.deltaTime;
-        }
-
-        if (rb.velocity.y < 0 && isGrounded() == false && isJumping)
-        {
-            rb.velocity += Vector2.up * Physics2D.gravity.y * (fallMult - 1) * Time.deltaTime; //falling faster for weighty physics
-
-        }
-        else if (rb.velocity.y > 0 && !Input.GetButton("Jump") && isGrounded() == false && isJumping == true)
-        {
-            rb.velocity += Vector2.up * Physics2D.gravity.y * (lowJumpMult - 1) * Time.deltaTime; //dynamic jump (when key is released gravity is increased)
-
+            if (jumpTimeCounter > 0)
+            {
+                rb.velocity = new Vector2(rb.velocity.x, jumpVelocity);
+                jumpTimeCounter -= Time.deltaTime;
+            }
+            else
+            {
+                rb.velocity = new Vector2(rb.velocity.x, 0f);
+                isJumping = false;
+            }
         }
 
-        if (!Input.GetButton("Jump") && isGrounded())
+        if (Input.GetButtonUp("Jump"))
         {
             isJumping = false;
         }
+
+        if (rb.velocity.y > 0 && !Input.GetButton("Jump")) //if they stopped pressing jump and they were jumping make the velocity 0
+        {
+            rb.velocity = new Vector2(rb.velocity.x, 0f);
+        }
+
+        if (isJumping == true)
+        {
+            ChangeState(playerState.jump);
+        }
+        else if (isJumping == false)
+        {
+            ChangeState(playerState.idle);
+        }
+
     }
 
-    private void FixedUpdate()
-    { 
-           
+    public void ChangeState(playerState newState)
+    {
+        if (thisPlayerState != newState)
+        {
+            thisPlayerState = newState;
+        }
     }
 
 
