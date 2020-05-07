@@ -7,6 +7,7 @@ public enum playerState
     idle,
     walk,
     jump,
+    falling,
     shoot,
     interact,
 }
@@ -15,15 +16,13 @@ public enum playerState
 public class PlayerController : MonoBehaviour
 {
     private float moveSpeed = 350;
-    private float jumpVelocity = 19;
+    private float jumpVelocity = 25.3f;
     private float airResist = .9f;
-    public float jumpTimer;
-    private float jumpTimeCounter;
     public BoxCollider2D boxCollider2D;
     public LayerMask groundLayer;
     public Rigidbody2D rb;
     public playerState thisPlayerState;
-    private bool isJumping;
+    private bool jumpedAlready;
     private bool facingRight;
     public Vector2 norm;
     // Start is called before the first frame update
@@ -31,6 +30,7 @@ public class PlayerController : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         facingRight = true;
+        jumpedAlready = false;
     }
 
     public bool isGrounded()
@@ -61,13 +61,13 @@ public class PlayerController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if  (!isGrounded())
+        if  (!isGrounded()) //if player is rising
         {
             rb.AddForce(Vector2.down * 45f);
         }
-        else if (isGrounded())
+        else if (isGrounded()) //if player is on the ground
         {
-            rb.AddForce(norm * -45f);
+            rb.AddForce(norm * -60f);
         }
 
  
@@ -87,7 +87,6 @@ public class PlayerController : MonoBehaviour
             transform.localRotation = Quaternion.Euler(0, 0, 0);
         }
 
-
         if (Input.GetKey(KeyCode.RightArrow)) //moving right
         {
             if (isGrounded()) //when on the ground
@@ -95,6 +94,7 @@ public class PlayerController : MonoBehaviour
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime, rb.velocity.y);
                 facingRight = true;
             }
+
             else if (isGrounded() == false) //while in the air
             {
                 rb.velocity = new Vector2(moveSpeed * Time.deltaTime * airResist, rb.velocity.y);
@@ -106,9 +106,8 @@ public class PlayerController : MonoBehaviour
         {
             if (isGrounded()) //when grounded
             {
-                rb.velocity = new Vector2(moveSpeed * Time.deltaTime * -1, rb.velocity.y);
-                facingRight = false;
-
+                rb.velocity = new Vector2(-1 * moveSpeed * Time.deltaTime, rb.velocity.y);
+                facingRight = true;
             }
             else if (isGrounded() == false) //while in the air
             {
@@ -122,36 +121,15 @@ public class PlayerController : MonoBehaviour
             rb.velocity = new Vector2(0 * Time.deltaTime, rb.velocity.y);
             ChangeState(playerState.idle);
         }
-
-        if (isGrounded() && !Input.GetButton("Jump"))
+        
+        if(Input.GetButton("Jump") && isGrounded() && !jumpedAlready)
         {
-            isJumping = false;
+            rb.AddForce(Vector2.up * jumpVelocity, ForceMode2D.Impulse); //jump
+            jumpedAlready = true;
         }
-
-        if (Input.GetButtonDown("Jump") && isGrounded() && isJumping == false) //jumping if button is pressed down
+        else if (Input.GetButtonUp("Jump"))
         {
-            rb.velocity = new Vector2(rb.velocity.x, jumpVelocity);
-            jumpTimeCounter = jumpTimer;
-            isJumping = true;
-        }
-
-        if (Input.GetButton("Jump") && !isGrounded() && isJumping == true)
-        {
-            if (jumpTimeCounter > 0)
-            {
-                rb.velocity = new Vector2(rb.velocity.x, jumpVelocity);
-                jumpTimeCounter -= Time.deltaTime;
-            }
-            else
-            {
-                rb.velocity = new Vector2(rb.velocity.x, 0f);
-                isJumping = false;
-            }
-        }
-
-        if (Input.GetButtonUp("Jump"))
-        {
-            isJumping = false;
+            jumpedAlready = false;
         }
 
         if (rb.velocity.y > 0 && !Input.GetButton("Jump")) //if they stopped pressing jump and they were jumping make the velocity 0
@@ -159,15 +137,14 @@ public class PlayerController : MonoBehaviour
             rb.velocity = new Vector2(rb.velocity.x, 0f);
         }
 
-        if (isJumping == true)
+        if (rb.velocity.y > 0 && !isGrounded())
         {
             ChangeState(playerState.jump);
         }
-        else if (isJumping == false)
+        else if (rb.velocity.y < 0 && !isGrounded())
         {
-            ChangeState(playerState.idle);
+            ChangeState(playerState.falling);
         }
-
     }
 
     public void ChangeState(playerState newState)
