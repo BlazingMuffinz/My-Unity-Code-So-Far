@@ -2,83 +2,75 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum playerState
+public class Templar : EnemyController
 {
-    idle,
-    walk,
-    jump,
-    falling,
-    shoot,
-    interact,
-}
+    public float groundRaycastDistance = 2;
+    public float sightRadius = 10;
+    public float patrolMaxTime;
+    public float patrolTime;
+    public float stopMaxTime;
+    public float turnAroundTimer;
 
+    private Rigidbody2D rb;
 
-public class PlayerController : MonoBehaviour
-{
-    private float moveSpeed = 350;
-    private float jumpVelocity = 25.3f;
-    private float airResist = .9f;
+    public GameObject groundCheck;
+    public GameObject sightObject;
+    private GameObject target;
+    public LayerMask groundLayers;
+    public LayerMask playerLayer;
     public BoxCollider2D boxCollider2D;
-    public LayerMask groundLayer;
-    public Rigidbody2D rb;
-    public playerState thisPlayerState;
-    private bool jumpedAlready;
+
     private bool facingRight;
-    public Vector2 norm;
+    private bool calledFunction;
+    private bool searchEnded;
     // Start is called before the first frame update
     void Start()
     {
+        if (thisEnemyType == enemyType.awake) //if the enemy type is awake it is awake
+        {
+            ChangeState(enemyState.idle);
+        }
+        boxCollider2D = GetComponent<BoxCollider2D>();
         rb = GetComponent<Rigidbody2D>();
+        target = GameObject.FindGameObjectWithTag("Player");
+        calledFunction = false;
         facingRight = true;
-        jumpedAlready = false;
     }
 
-    public bool isGrounded()
+    private bool platformInFront() //if raycast detects the ground in front of the enemy
     {
-        
-        float extraHeightText = .1f;
-        RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider2D.bounds.center, boxCollider2D.bounds.size, 0f, Vector2.down, extraHeightText, groundLayer);
-        if (raycastHit.collider != null)
+        RaycastHit2D hit = Physics2D.Raycast(groundCheck.transform.position, Vector2.down, groundRaycastDistance, groundLayers);
+        if (hit.collider != null)
         {
-            norm = raycastHit.normal;
-            Debug.DrawRay(raycastHit.point, raycastHit.normal, Color.black);
-        }
-        /*Color rayColor;
-        if (raycastHit.collider != null)
-        {
-            rayColor = Color.green;
+            Debug.DrawRay(groundCheck.transform.position, Vector2.down * groundRaycastDistance, Color.green);
         }
         else
         {
-            rayColor = Color.red;
+            Debug.DrawRay(groundCheck.transform.position, Vector2.down * groundRaycastDistance, Color.red);
         }
-        
-        Debug.DrawRay(boxCollider2D.bounds.center + new Vector3(boxCollider2D.bounds.extents.x, 0), Vector2.down * (boxCollider2D.bounds.extents.y + extraHeightText), rayColor);
-        Debug.DrawRay(boxCollider2D.bounds.center - new Vector3(boxCollider2D.bounds.extents.x, 0), Vector2.down * (boxCollider2D.bounds.extents.y + extraHeightText), rayColor);
-        Debug.DrawRay(boxCollider2D.bounds.center - new Vector3(boxCollider2D.bounds.extents.x, boxCollider2D.bounds.extents.y + extraHeightText), Vector2.right * (boxCollider2D.bounds.extents.x), rayColor);*/
-        return raycastHit.collider != null;
+        return hit.collider != null;
     }
-
-    private void FixedUpdate()
+    
+    private bool FoundPlayer()
     {
-        if  (!isGrounded()) //if player is rising
-        {
-            rb.AddForce(Vector2.down * 45f);
-        }
-        else if (isGrounded()) //if player is on the ground
-        {
-            rb.AddForce(norm * -60f);
-        }
-
- 
-       
+        Collider2D collider = Physics2D.OverlapBox(sightObject.transform.position, new Vector2 (10,4), 0f, playerLayer);
+        return collider != null;
     }
 
     // Update is called once per frame
     void Update()
     {
+        if (health <= 0)
+        {
+            Die();
+        }
+    }
 
-        if (!facingRight)
+    void FixedUpdate()
+    {
+        rb.AddForce(Vector2.down * 45f); //if later they need to detect the ground it can be adapted
+
+        if (!facingRight) //facing right rotation stuff
         {
             transform.localRotation = Quaternion.Euler(0, 180, 0);
         }
@@ -87,73 +79,58 @@ public class PlayerController : MonoBehaviour
             transform.localRotation = Quaternion.Euler(0, 0, 0);
         }
 
-        if (Input.GetKey(KeyCode.RightArrow)) //moving right
+        if (!platformInFront() && !calledFunction) // if it doesn't detect a platform
         {
-            if (isGrounded()) //when on the ground
-            {
-                rb.velocity = new Vector2(moveSpeed * Time.deltaTime, rb.velocity.y);
-                facingRight = true;
-            }
-
-            else if (isGrounded() == false) //while in the air
-            {
-                rb.velocity = new Vector2(moveSpeed * Time.deltaTime * airResist, rb.velocity.y);
-                facingRight = true;
-            }
-            ChangeState(playerState.walk);
-        }
-        else if (Input.GetKey(KeyCode.LeftArrow)) //moving left
-        {
-            if (isGrounded()) //when grounded
-            {
-                rb.velocity = new Vector2(-1 * moveSpeed * Time.deltaTime, rb.velocity.y);
-                facingRight = true;
-            }
-            else if (isGrounded() == false) //while in the air
-            {
-                rb.velocity = new Vector2(moveSpeed * Time.deltaTime * airResist * -1, rb.velocity.y);
-                facingRight = false;
-            }
-            ChangeState(playerState.walk);
-        }
-        else
-        {            
-            rb.velocity = new Vector2(0 * Time.deltaTime, rb.velocity.y);
-            ChangeState(playerState.idle);
-        }
-        
-        if(Input.GetButton("Jump") && isGrounded() && !jumpedAlready)
-        {
-            rb.AddForce(Vector2.up * jumpVelocity, ForceMode2D.Impulse); //jump
-            jumpedAlready = true;
-        }
-        else if (Input.GetButtonUp("Jump"))
-        {
-            jumpedAlready = false;
+            StartCoroutine(TurnAround());
         }
 
-        if (rb.velocity.y > 0 && !Input.GetButton("Jump")) //if they stopped pressing jump and they were jumping make the velocity 0
+        if (!FoundPlayer())
         {
-            rb.velocity = new Vector2(rb.velocity.x, 0f);
+            if (platformInFront() && facingRight)
+            {
+                
+            }
+            else if (platformInFront() && !facingRight)
+            {
+                
+            }
         }
-
-        if (rb.velocity.y > 0 && !isGrounded())
+        else if (FoundPlayer())
         {
-            ChangeState(playerState.jump);
-        }
-        else if (rb.velocity.y < 0 && !isGrounded())
-        {
-            ChangeState(playerState.falling);
+            
         }
     }
 
-    public void ChangeState(playerState newState)
+    void Attack()
     {
-        if (thisPlayerState != newState)
+        if (FoundPlayer())
         {
-            thisPlayerState = newState;
+            calledFunction = true;
+            ChangeState(enemyState.attacking);
+            calledFunction = false;
         }
     }
 
+    private IEnumerator TurnAround()
+    {
+        calledFunction = true;
+        ChangeState(enemyState.turning);
+        yield return new WaitForSeconds(turnAroundTimer);
+        if (facingRight)
+        {
+            facingRight = false;
+        }
+        else if (!facingRight)
+        {
+            facingRight = true;
+        }
+        calledFunction = false;
+    }
+    
 
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireCube(sightObject.transform.position, new Vector2 (10,4));
+    }
 }
