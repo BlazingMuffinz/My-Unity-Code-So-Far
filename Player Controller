@@ -1,136 +1,92 @@
-using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
 
-public class Templar : EnemyController
+
+public LayerMask groundLayer;
+public BoxCollider2D groundCheck2;
+private Rigidbody2D rb;
+private bool rotated;
+public Vector2 norm;
+public float zed;
+// Start is called before the first frame update
+void Start()
 {
-    public float groundRaycastDistance = 2;
-    public float sightRadius = 10;
-    public float patrolMaxTime;
-    public float patrolTime;
-    public float stopMaxTime;
-    public float turnAroundTimer;
+rb = GetComponent<Rigidbody2D>();
+rotated = false;
+zed = transform.eulerAngles.z;
+}
+private bool WallInFront()
+{
+RaycastHit2D raycastHit = Physics2D.Raycast(transform.position, transform.right, .5f, groundLayer);
+if (raycastHit.collider != null)
+{
+Debug.DrawRay(transform.position, transform.right, Color.green, .5f);
+}
+else
+{
+Debug.DrawRay(transform.position, transform.right, Color.red, .5f);
+}
+return raycastHit.collider != null;
+}
 
-    private Rigidbody2D rb;
+private bool Grounded()
+{
+float extraHeight = .1f;
+RaycastHit2D raycastHit = Physics2D.BoxCast(groundCheck2.bounds.center, groundCheck2.bounds.size, 0f, -transform.up, extraHeight, groundLayer);
+if (raycastHit.collider != null)
+{
+norm = raycastHit.normal;
+Debug.DrawRay(raycastHit.point, raycastHit.normal, Color.black);
+}
+return raycastHit.collider != null;
+}
 
-    public GameObject groundCheck;
-    public GameObject sightObject;
-    private GameObject target;
-    public LayerMask groundLayers;
-    public LayerMask playerLayer;
-    public BoxCollider2D boxCollider2D;
+// Update is called once per frame
+void Update()
+{
+zed = Mathf.Round(zed / 90) * 90;
+}
 
-    private bool facingRight;
-    private bool calledFunction;
-    private bool searchEnded;
-    // Start is called before the first frame update
-    void Start()
-    {
-        if (thisEnemyType == enemyType.awake) //if the enemy type is awake it is awake
-        {
-            ChangeState(enemyState.idle);
-        }
-        boxCollider2D = GetComponent<BoxCollider2D>();
-        rb = GetComponent<Rigidbody2D>();
-        target = GameObject.FindGameObjectWithTag("Player");
-        calledFunction = false;
-        facingRight = true;
-    }
+private void FixedUpdate()
+{
+if (Grounded() && !WallInFront())
+{
+if (zed == 0)
+{
+rb.velocity = new Vector2(speed * Time.deltaTime, rb.velocity.y);
+}
+else if (zed == 270)
+{
+rb.velocity = new Vector2(rb.velocity.x, -speed * Time.deltaTime);
+}
+else if (zed == 180)
+{
+rb.velocity = new Vector2(-speed * Time.deltaTime, rb.velocity.y);
+}
+else if (zed == 90)
+{
+rb.velocity = new Vector2(rb.velocity.x, speed * Time.deltaTime);
+}
+}
+else if (!Grounded() && !WallInFront() && !rotated)
+{
+RotateDown();
+}
+else if (Grounded() && WallInFront())
+{
+RotateUp();
+}
 
-    private bool platformInFront() //if raycast detects the ground in front of the enemy
-    {
-        RaycastHit2D hit = Physics2D.Raycast(groundCheck.transform.position, Vector2.down, groundRaycastDistance, groundLayers);
-        if (hit.collider != null)
-        {
-            Debug.DrawRay(groundCheck.transform.position, Vector2.down * groundRaycastDistance, Color.green);
-        }
-        else
-        {
-            Debug.DrawRay(groundCheck.transform.position, Vector2.down * groundRaycastDistance, Color.red);
-        }
-        return hit.collider != null;
-    }
-    
-    private bool FoundPlayer()
-    {
-        Collider2D collider = Physics2D.OverlapBox(sightObject.transform.position, new Vector2 (10,4), 0f, playerLayer);
-        return collider != null;
-    }
+}
 
-    // Update is called once per frame
-    void Update()
-    {
-        if (health <= 0)
-        {
-            Die();
-        }
-    }
+void RotateDown()
+{
+rb.velocity = Vector2.zero;
+Quaternion newRot = Quaternion.Euler(0, 0, zed - 90);
+transform.rotation = Quaternion.Slerp(transform.rotation, newRot, 1f);
+}
 
-    void FixedUpdate()
-    {
-        rb.AddForce(Vector2.down * 45f); //if later they need to detect the ground it can be adapted
-
-        if (!facingRight) //facing right rotation stuff
-        {
-            transform.localRotation = Quaternion.Euler(0, 180, 0);
-        }
-        else
-        {
-            transform.localRotation = Quaternion.Euler(0, 0, 0);
-        }
-
-        if (!platformInFront() && !calledFunction) // if it doesn't detect a platform
-        {
-            StartCoroutine(TurnAround());
-        }
-
-        if (!FoundPlayer())
-        {
-            if (platformInFront() && facingRight)
-            {
-                
-            }
-            else if (platformInFront() && !facingRight)
-            {
-                
-            }
-        }
-        else if (FoundPlayer())
-        {
-            
-        }
-    }
-
-    void Attack()
-    {
-        if (FoundPlayer())
-        {
-            calledFunction = true;
-            ChangeState(enemyState.attacking);
-            calledFunction = false;
-        }
-    }
-
-    private IEnumerator TurnAround()
-    {
-        calledFunction = true;
-        ChangeState(enemyState.turning);
-        yield return new WaitForSeconds(turnAroundTimer);
-        if (facingRight)
-        {
-            facingRight = false;
-        }
-        else if (!facingRight)
-        {
-            facingRight = true;
-        }
-        calledFunction = false;
-    }
-    
-
-    private void OnDrawGizmos()
-    {
-        Gizmos.color = Color.red;
-        Gizmos.DrawWireCube(sightObject.transform.position, new Vector2 (10,4));
-    }
+void RotateUp()
+{
+rb.velocity = Vector2.zero;
+Quaternion newRot = Quaternion.Euler(0, 0, zed + 90);
+transform.rotation = Quaternion.Slerp(transform.rotation, newRot, 1f);
 }
