@@ -1,92 +1,336 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using Pathfinding;
 
-
-public LayerMask groundLayer;
-public BoxCollider2D groundCheck2;
-private Rigidbody2D rb;
-private bool rotated;
-public Vector2 norm;
-public float zed;
-// Start is called before the first frame update
-void Start()
+public enum typeOfBeta
 {
-rb = GetComponent<Rigidbody2D>();
-rotated = false;
-zed = transform.eulerAngles.z;
-}
-private bool WallInFront()
-{
-RaycastHit2D raycastHit = Physics2D.Raycast(transform.position, transform.right, .5f, groundLayer);
-if (raycastHit.collider != null)
-{
-Debug.DrawRay(transform.position, transform.right, Color.green, .5f);
-}
-else
-{
-Debug.DrawRay(transform.position, transform.right, Color.red, .5f);
-}
-return raycastHit.collider != null;
+    ranged,
+    melee,
 }
 
-private bool Grounded()
+public class Beta : EnemyController
 {
-float extraHeight = .1f;
-RaycastHit2D raycastHit = Physics2D.BoxCast(groundCheck2.bounds.center, groundCheck2.bounds.size, 0f, -transform.up, extraHeight, groundLayer);
-if (raycastHit.collider != null)
-{
-norm = raycastHit.normal;
-Debug.DrawRay(raycastHit.point, raycastHit.normal, Color.black);
-}
-return raycastHit.collider != null;
-}
+    public float patrolRadius;
+    public float patrolResetTime;
+    public float sightRadius;
+    public float attackRadius;
+    private float patrolResetTimer;
+    private float patrolResetTime2;
+    public float reloadTime;
+    private float reloadTimer;
+    public float searchTime;
+    private float searchTimer;
+    private float turnSeed;
+    public float lockOnTime;
+    private float targetDistance;
 
-// Update is called once per frame
-void Update()
-{
-zed = Mathf.Round(zed / 90) * 90;
-}
 
-private void FixedUpdate()
-{
-if (Grounded() && !WallInFront())
-{
-if (zed == 0)
-{
-rb.velocity = new Vector2(speed * Time.deltaTime, rb.velocity.y);
-}
-else if (zed == 270)
-{
-rb.velocity = new Vector2(rb.velocity.x, -speed * Time.deltaTime);
-}
-else if (zed == 180)
-{
-rb.velocity = new Vector2(-speed * Time.deltaTime, rb.velocity.y);
-}
-else if (zed == 90)
-{
-rb.velocity = new Vector2(rb.velocity.x, speed * Time.deltaTime);
-}
-}
-else if (!Grounded() && !WallInFront() && !rotated)
-{
-RotateDown();
-}
-else if (Grounded() && WallInFront())
-{
-RotateUp();
-}
+    public typeOfBeta thisTypeOfBeta;
+    public AIPath aiPath;
+    public Seeker seeker;
+    public AIDestinationSetter setter;
+    private EnemyAttack enemyAttack;
+    public BoxCollider2D box;
 
-}
+    private GameObject target;
+    public GameObject firePoint;
+    public GameObject enemyBulletPrefab;
+   
+    private Vector2 startPos;
+    private Vector2 newStartPos;
+    private Vector2 nextPos;
+    private Vector2 nextPos2;
+    private Vector3 difference;
 
-void RotateDown()
-{
-rb.velocity = Vector2.zero;
-Quaternion newRot = Quaternion.Euler(0, 0, zed - 90);
-transform.rotation = Quaternion.Slerp(transform.rotation, newRot, 1f);
-}
+    private Rigidbody2D rb;
+    public LayerMask playerLayer;
 
-void RotateUp()
-{
-rb.velocity = Vector2.zero;
-Quaternion newRot = Quaternion.Euler(0, 0, zed + 90);
-transform.rotation = Quaternion.Slerp(transform.rotation, newRot, 1f);
+    private bool canRandomize;
+    private bool canChangeValue;
+    private bool calledFucntion;
+    private bool facingRight;
+    private bool haventSearched;
+    private bool canReset;
+    private bool lockedOn;
+    // Start is called before the first frame update
+    void Start()
+    {
+        rb = GetComponent<Rigidbody2D>();
+        enemyAttack = GetComponent<EnemyAttack>();
+        startPos = new Vector2(transform.position.x, transform.position.y);
+        patrolResetTimer = patrolResetTime2;
+        reloadTimer = reloadTime;
+        searchTimer = searchTime;
+        canRandomize = true;
+        facingRight = true;
+        haventSearched = true;
+        canChangeValue = true;
+        canReset = true;
+        aiPath.enabled = false;
+        setter.enabled = false;
+        seeker.enabled = false;
+        lockedOn = false;
+        enemyAttack.enabled = false;
+        box.isTrigger = false;
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (collision.gameObject.tag == ("Player"))
+        {
+            lockedOn = false;
+            box.isTrigger = false;
+            enemyAttack.enabled = false;
+        }
+        else if (collision.gameObject.tag == ("Terrain"))
+        {
+            lockedOn = false;
+            box.isTrigger = false;
+            enemyAttack.enabled = false;
+        }
+    }
+
+
+    private bool DetectedPlayer()
+    {
+        Collider2D collider = Physics2D.OverlapCircle(transform.position, sightRadius, playerLayer);
+        return collider != null;
+    }
+
+    private bool InAttackRange()
+    {
+        Collider2D collider = Physics2D.OverlapCircle(transform.position, attackRadius, playerLayer);
+        return collider != null;
+    }
+    
+    // Update is called once per frame
+    void Update()
+    {
+        if (canRandomize)
+        {
+            Randomize();
+        }
+
+        if (facingRight)
+        {
+            transform.localRotation = Quaternion.Euler(transform.eulerAngles.x, 0, transform.eulerAngles.z);
+        }
+        else
+        {
+            transform.localRotation = Quaternion.Euler(transform.eulerAngles.x, 180, transform.eulerAngles.z);
+        }
+
+        if (thisEnemyState == enemyState.patrolling) //if enemy is patrolling face randomly
+        {
+            if (turnSeed < .5f)
+            {
+                facingRight = true;
+            }
+            else if (turnSeed >= .5f)
+            {
+                facingRight = false;
+            }
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        if (!DetectedPlayer())
+        {
+            aiPath.enabled = false;
+            setter.enabled = false;
+            seeker.enabled = false;
+            if (!haventSearched)
+            {
+                sightRadius = 10.5f;
+                ResetValues();
+                if (searchTimer > 0)
+                {
+                    searchTimer -= Time.deltaTime;
+                    Search();
+                }
+                else if (searchTimer <= 0)
+                {
+                    haventSearched = true;
+                    canChangeValue = true;
+                    searchTimer = searchTime;
+                }
+            }
+            else
+            {
+                sightRadius = 8;
+                Patrol2();
+            }
+        }
+        else if (DetectedPlayer())
+        {
+            haventSearched = false; //the moment the enemty detects the player, the ability to search for him is possible
+
+            target = GameObject.FindGameObjectWithTag("Player");
+            difference = target.transform.position - firePoint.transform.position;
+            float zRotation = Mathf.Atan2(difference.y, difference.x) * Mathf.Rad2Deg;
+            firePoint.transform.rotation = Quaternion.Euler(0, 0, zRotation);
+
+            aiPath.enabled = true;
+            setter.enabled = true;
+            seeker.enabled = true;
+
+            if (target.transform.position.x > transform.position.x) //make enemy face player
+            {
+                facingRight = true;
+            }
+            else if (target.transform.position.x < transform.position.x)
+            {
+                facingRight = false;
+            }
+
+            if (thisTypeOfBeta == typeOfBeta.melee)
+            {
+                if (InAttackRange())
+                {
+                    aiPath.enabled = false;
+                    setter.enabled = false;
+                    seeker.enabled = false;
+                    if (Physics2D.Linecast(transform.position, target.transform.position, playerLayer))
+                    {
+                        Attack2();
+                    }
+                }
+                else
+                {
+                    ChangeState(enemyState.chasing);
+                }
+            }
+            else if (thisTypeOfBeta == typeOfBeta.ranged)
+            {              
+                if (InAttackRange())
+                {
+                    aiPath.enabled = false;
+                    setter.enabled = false;
+                    seeker.enabled = false;
+                    if (Physics2D.Linecast(transform.position, target.transform.position, playerLayer))
+                    {
+                        Attack();
+                    }                   
+                }
+                else
+                {
+                    ChangeState(enemyState.chasing);
+                }
+            }
+        }
+    }
+
+    private void Randomize()
+    {
+        nextPos = startPos + Random.insideUnitCircle * patrolRadius;
+        nextPos2 = newStartPos + Random.insideUnitCircle * patrolRadius;
+        nextPos = new Vector2((Mathf.Round(nextPos.x / .25f)* .25f), (Mathf.Round(nextPos.y / .25f)* .25f));
+        nextPos2 = new Vector2((Mathf.Round(nextPos2.x / .25f) * .25f), (Mathf.Round(nextPos2.y / .25f) * .25f));
+        patrolResetTime2 = Random.Range(.6f, patrolResetTime);
+        turnSeed = Random.Range(0f, 1f);
+        canRandomize = false;
+    }
+
+    private void Patrol2() //how the enemy randomly patrols a set area
+    {
+        if (new Vector2(transform.position.x, transform.position.y) == nextPos) //if the enemy reached it's patrol point
+        {
+            if (patrolResetTimer > 0) //if the timer is ticking, stop moving
+            {
+                patrolResetTimer -= Time.deltaTime;
+                transform.position = transform.position;
+                ChangeState(enemyState.idle);
+            }
+            else if (patrolResetTimer <= 0) //reset everything whehn it hits zero
+            {
+                canRandomize = true;
+                patrolResetTimer = patrolResetTime2;//restart internal timer
+            }
+        }
+        else
+        {
+            transform.position = Vector2.MoveTowards(transform.position, nextPos, speed / 50 * Time.deltaTime);
+            ChangeState(enemyState.patrolling);
+        }        
+    }
+
+    private void Attack() // the ranged attack for the ranged beta
+    {
+        if (reloadTimer > 0)
+        {
+            reloadTimer -= Time.deltaTime;
+            ChangeState(enemyState.reloading);
+        }
+        else if (reloadTimer <= 0)
+        {
+            Instantiate(enemyBulletPrefab, firePoint.transform.position, firePoint.transform.rotation);
+            ChangeState(enemyState.attacking);
+            reloadTimer = reloadTime;
+        }
+    }
+
+    private void Attack2()
+    {
+        if (lockedOn)
+        {
+            box.isTrigger = true;
+            if (targetDistance > .5f)
+            {
+
+            }
+        }
+        else if (!lockedOn)
+        {
+            StartCoroutine(LockOn());
+        }
+    }
+
+    private void Search()
+    {
+        if (new Vector2(transform.position.x, transform.position.y) == nextPos2) //if the enemy reached it's patrol point
+        {
+            if (patrolResetTimer > 0) //if the timer is ticking, stop moving
+            {
+                patrolResetTimer -= Time.deltaTime;
+                transform.position = transform.position;
+            }
+            else if (patrolResetTimer <= 0) //reset everything whehn it hits zero
+            {
+                canRandomize = true;
+                canReset = true;
+                patrolResetTimer = patrolResetTime2;//restart internal timer
+            }
+        }
+        else
+        {
+            transform.position = Vector2.MoveTowards(transform.position, nextPos2, speed / 50 * Time.deltaTime);
+        }
+        ChangeState(enemyState.searching);
+    }
+
+    private void ResetValues()
+    {
+        if (canReset)
+        {
+            newStartPos = new Vector2(Mathf.Round(transform.position.x), Mathf.Round(transform.position.y));
+            Randomize();
+            canReset = false;
+        }
+    }
+
+    private IEnumerator LockOn()
+    {
+        targetDistance = Vector2.Distance(transform.position, target.transform.position);
+        lockedOn = true;
+        yield return new WaitForSeconds(lockOnTime);
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, sightRadius);
+        Gizmos.DrawWireSphere(transform.position, attackRadius);
+    }
 }
